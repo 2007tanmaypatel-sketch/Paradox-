@@ -1,4 +1,5 @@
 (function () {
+  // ─── State ───
   const state = {
     today: new Date().toISOString().slice(0, 10),
     rateCard: null,
@@ -6,14 +7,8 @@
     entries: [],
     farmers: [],
     shiftFilter: 'ALL',
-    activeSlip: null,
     lastAddedId: null,
-    kpiValues: {
-      qty: 0,
-      base: 0,
-      bonus: 0,
-      payable: 0
-    }
+    kpiPrev: { qty: 0, base: 0, bonus: 0, payable: 0 }
   };
 
   const $ = (id) => document.getElementById(id);
@@ -22,858 +17,640 @@
     const num = Number(value) || 0;
     return `₹${num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
-
-  function formatNum(value, decimals = 2) {
-    return (Number(value) || 0).toFixed(decimals);
+  function formatNum(v, d = 2) { return (Number(v) || 0).toFixed(d); }
+  function escapeHtml(t) {
+    return String(t ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  function escapeHtml(text) {
-    return String(text ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
-  // Smooth number counter animation for KPI cards
-  function animateValue(el, from, to, formatter, duration = 420) {
+  // ─── Smooth counter ───
+  function countUp(el, from, to, fmt, ms = 500) {
     const start = performance.now();
     const diff = to - from;
-    if (Math.abs(diff) < 0.01) {
-      el.textContent = formatter(to);
-      return;
-    }
-
-    function tick(now) {
-      const elapsed = Math.min((now - start) / duration, 1);
-      const eased = 1 - Math.pow(1 - elapsed, 3);
-      el.textContent = formatter(from + diff * eased);
-      if (elapsed < 1) {
-        requestAnimationFrame(tick);
-      } else {
-        el.textContent = formatter(to);
-      }
-    }
-
+    if (Math.abs(diff) < 0.01) { el.textContent = fmt(to); return; }
+    const tick = (now) => {
+      const t = Math.min((now - start) / ms, 1);
+      const ease = 1 - Math.pow(1 - t, 3);
+      el.textContent = fmt(from + diff * ease);
+      if (t < 1) requestAnimationFrame(tick);
+      else el.textContent = fmt(to);
+    };
     requestAnimationFrame(tick);
   }
 
+  // ─── Toast ───
   let toastTimer;
-  function showToast(message, isError = false) {
+  function toast(msg, err = false) {
     const el = $('toast');
-    el.textContent = message;
-    el.className = `toast show${isError ? ' error' : ''}`;
+    el.textContent = msg;
+    el.className = `toast show${err ? ' error' : ''}`;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => {
-      el.className = 'toast';
-    }, 3200);
+    toastTimer = setTimeout(() => el.className = 'toast', 3400);
   }
 
-  async function api(url, options = {}) {
-    const res = await fetch(url, {
-      headers: { 'Content-Type': 'application/json' },
-      ...options
-    });
+  // ─── API ───
+  async function api(url, opts = {}) {
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opts });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data.error || `Request failed (${res.status})`);
-    }
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     return data;
   }
 
-  // Sidebar Navigation with re-triggered panel reveal
-  function switchTab(tabName) {
-    document.querySelectorAll('.nav-item').forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.tab === tabName);
-    });
-    document.querySelectorAll('.tab-panel').forEach((panel) => {
-      const active = panel.id === `tab-${tabName}`;
-      panel.classList.toggle('active', active);
-    });
+  // ─── Particles ───
+  function spawnParticles() {
+    const container = $('particles');
+    if (!container) return;
+    for (let i = 0; i < 28; i++) {
+      const p = document.createElement('div');
+      p.className = 'particle';
+      p.style.cssText = `
+        left: ${Math.random() * 100}%;
+        bottom: ${Math.random() * 30}%;
+        --pdur: ${5 + Math.random() * 9}s;
+        --pdel: ${Math.random() * 8}s;
+        opacity: 0;
+        background: ${Math.random() > 0.6 ? '#14e87e' : Math.random() > 0.5 ? '#f59e0b' : '#38bdf8'};
+        width: ${1.5 + Math.random() * 2.5}px;
+        height: ${1.5 + Math.random() * 2.5}px;
+      `;
+      container.appendChild(p);
+    }
   }
 
-  document.querySelectorAll('.nav-item').forEach((btn) => {
+  // ─── Tab Navigation ───
+  function switchTab(name) {
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === `tab-${name}`));
+  }
+  document.querySelectorAll('.nav-btn').forEach(btn => {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
   });
 
-  // Shift Segmented Toggle
-  document.querySelectorAll('.seg-btn').forEach((btn) => {
+  // ─── Shift toggle ───
+  document.querySelectorAll('.seg').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.seg-btn').forEach((b) => b.classList.remove('active'));
+      document.querySelectorAll('.seg').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       $('entryShift').value = btn.dataset.shift;
     });
   });
 
-  // Shift Filter in Register
-  document.querySelectorAll('.shift-filter-btn').forEach((btn) => {
+  // ─── Shift filter ───
+  document.querySelectorAll('.filter-tab').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.shift-filter-btn').forEach((b) => b.classList.remove('active'));
+      document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       state.shiftFilter = btn.dataset.filterShift;
-      renderEntriesTable();
+      renderTable();
     });
   });
 
+  // ─── Init ───
   async function init() {
-    try {
-      const health = await api('/api/health');
-      state.today = health.today;
-    } catch {
-      // Fallback to local date
-    }
+    spawnParticles();
+    try { const h = await api('/api/health'); state.today = h.today; } catch {}
 
     $('summaryDate').value = state.today;
     $('entryDate').value = state.today;
     $('slipFromDate').value = state.today;
     $('slipToDate').value = state.today;
 
-    await Promise.all([loadRateCard(), loadFarmers(), loadDailySummary()]);
-    updateLivePreview();
+    await Promise.all([loadRateCard(), loadFarmers(), loadSummary()]);
+    updatePreview();
   }
 
+  // ─── Farmers ───
   async function loadFarmers() {
-    const data = await api('/api/farmers');
-    state.farmers = data.farmers || [];
+    const d = await api('/api/farmers');
+    state.farmers = d.farmers || [];
+    $('farmerList').innerHTML = state.farmers.map(f => `<option value="${escapeHtml(f.farmerId)}">${escapeHtml(f.farmerName)}</option>`).join('');
+    const sel = $('slipFarmerSelect');
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">Select farmer...</option>' +
+      state.farmers.map(f => `<option value="${escapeHtml(f.farmerId)}">${escapeHtml(f.farmerId)} — ${escapeHtml(f.farmerName)}</option>`).join('');
+    if (prev && state.farmers.some(f => f.farmerId === prev)) sel.value = prev;
+  }
 
-    $('farmerList').innerHTML = state.farmers
-      .map((f) => `<option value="${escapeHtml(f.farmerId)}">${escapeHtml(f.farmerName)}</option>`)
-      .join('');
+  // ─── Summary ───
+  async function loadSummary() {
+    const date = $('summaryDate').value || state.today;
+    const d = await api(`/api/summary?date=${encodeURIComponent(date)}`);
+    state.entries = d.entries || [];
+    renderKPIs(d.summary);
+    renderTable();
+  }
 
-    const select = $('slipFarmerSelect');
-    const prev = select.value;
-    select.innerHTML =
-      '<option value="">Select farmer...</option>' +
-      state.farmers
-        .map((f) => `<option value="${escapeHtml(f.farmerId)}">${escapeHtml(f.farmerId)} — ${escapeHtml(f.farmerName)}</option>`)
-        .join('');
-    if (prev && state.farmers.some((f) => f.farmerId === prev)) {
-      select.value = prev;
+  function renderKPIs(s) {
+    countUp($('kpiTotalQty'), state.kpiPrev.qty, s.totalQuantity, v => `${formatNum(v)} L`);
+    countUp($('kpiBaseAmountVal'), state.kpiPrev.base, s.totalBaseAmount, formatINR);
+    countUp($('kpiTotalBonus'), state.kpiPrev.bonus, s.totalBonusAmount, formatINR);
+    countUp($('kpiTotalPayable'), state.kpiPrev.payable, s.totalPayable, formatINR);
+
+    state.kpiPrev = { qty: s.totalQuantity, base: s.totalBaseAmount, bonus: s.totalBonusAmount, payable: s.totalPayable };
+
+    $('kpiFarmers').textContent = `${s.farmerCount} farmer${s.farmerCount === 1 ? '' : 's'} · ${s.entryCount} entr${s.entryCount === 1 ? 'y' : 'ies'}`;
+    $('kpiAvgRate').textContent = `Avg: ${formatINR(s.avgRate)}/L`;
+    $('kpiBonusCount').textContent = `${s.bonusEntriesCount} qualifying`;
+    $('kpiAvgQuality').textContent = `Avg ${formatNum(s.avgFat, 1)}% Fat · ${formatNum(s.avgSnf, 1)}% SNF`;
+
+    const fill = $('kpiQtyBar');
+    if (fill && s.totalQuantity > 0) {
+      const pct = Math.min(100, (s.totalQuantity / 500) * 100);
+      requestAnimationFrame(() => { fill.style.width = `${pct}%`; });
     }
   }
 
-  async function loadDailySummary() {
-    const date = $('summaryDate').value || state.today;
-    const data = await api(`/api/summary?date=${encodeURIComponent(date)}`);
-    state.entries = data.entries || [];
-    renderKpis(data.summary);
-    renderEntriesTable();
-  }
-
-  function renderKpis(summary) {
-    animateValue($('kpiTotalQty'), state.kpiValues.qty, summary.totalQuantity, (v) => `${formatNum(v)} L`);
-    animateValue($('kpiBaseAmountVal'), state.kpiValues.base, summary.totalBaseAmount, formatINR);
-    animateValue($('kpiTotalBonus'), state.kpiValues.bonus, summary.totalBonusAmount, formatINR);
-    animateValue($('kpiTotalPayable'), state.kpiValues.payable, summary.totalPayable, formatINR);
-
-    state.kpiValues = {
-      qty: summary.totalQuantity,
-      base: summary.totalBaseAmount,
-      bonus: summary.totalBonusAmount,
-      payable: summary.totalPayable
-    };
-
-    $('kpiFarmers').textContent = `${summary.farmerCount} farmer${summary.farmerCount === 1 ? '' : 's'} · ${summary.entryCount} entr${summary.entryCount === 1 ? 'y' : 'ies'}`;
-    $('kpiAvgRate').textContent = `Avg rate: ${formatINR(summary.avgRate)}/L`;
-    $('kpiBonusCount').textContent = `${summary.bonusEntriesCount} qualifying entr${summary.bonusEntriesCount === 1 ? 'y' : 'ies'}`;
-    $('kpiAvgQuality').textContent = `Weighted Avg: ${formatNum(summary.avgFat, 1)}% Fat · ${formatNum(summary.avgSnf, 1)}% SNF`;
-  }
-
-  function renderEntriesTable() {
-    const query = ($('farmerSearch').value || '').trim().toLowerCase();
+  function renderTable() {
+    const q = ($('farmerSearch').value || '').trim().toLowerCase();
     const date = $('summaryDate').value || state.today;
     $('registerSubtitle').textContent = `Ledger date ${date}`;
 
-    const filtered = state.entries.filter((e) => {
-      if (state.shiftFilter !== 'ALL' && e.shift !== state.shiftFilter) {
-        return false;
-      }
-      if (!query) return true;
-      return (
-        e.farmerId.toLowerCase().includes(query) ||
-        e.farmerName.toLowerCase().includes(query)
-      );
+    const rows = state.entries.filter(e => {
+      if (state.shiftFilter !== 'ALL' && e.shift !== state.shiftFilter) return false;
+      if (!q) return true;
+      return e.farmerId.toLowerCase().includes(q) || e.farmerName.toLowerCase().includes(q);
     });
 
     const tbody = $('entriesTableBody');
     const tfoot = $('entriesTableFoot');
 
-    if (filtered.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="9" class="empty-state">No collection entries match the selected filter for ${escapeHtml(date)}.</td></tr>`;
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="9" class="empty-row">No entries found for ${escapeHtml(date)}.</td></tr>`;
       tfoot.innerHTML = '';
       return;
     }
 
-    tbody.innerHTML = filtered
-      .map((e, idx) => {
-        const bonusCell = e.bonusApplied
-          ? `<span class="bonus-pill" title="${escapeHtml(e.bonusLabel || '')}">+${formatINR(e.bonusAmount)}</span>`
-          : `<span style="color:var(--ink-muted)">—</span>`;
-        const rowClass = e.id === state.lastAddedId ? 'row-flash' : 'row-enter';
-        return `
-          <tr class="${rowClass}" style="--row-delay: ${Math.min(idx * 35, 280)}ms">
-            <td>
-              <div class="farmer-cell">
-                <span class="farmer-code-pill">${escapeHtml(e.farmerId)}</span>
-                <span class="farmer-name-text">${escapeHtml(e.farmerName)}</span>
-              </div>
-            </td>
-            <td><span class="shift-tag">${escapeHtml(e.shift)}</span></td>
-            <td class="num">${formatNum(e.quantity)}</td>
-            <td class="num">${formatNum(e.fat, 1)}%</td>
-            <td class="num">${formatNum(e.snf, 1)}%</td>
-            <td class="num">${formatINR(e.ratePerLiter)}</td>
-            <td class="num">${bonusCell}</td>
-            <td class="num"><strong>${formatINR(e.totalAmount)}</strong></td>
-            <td class="actions-col">
-              <div class="row-actions">
-                <button type="button" class="btn btn-outline btn-sm" data-slip-id="${escapeHtml(e.id)}">Slip</button>
-                <button type="button" class="btn-icon-danger" data-delete-id="${escapeHtml(e.id)}" title="Delete entry" aria-label="Delete entry">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="3 6 5 6 21 6" />
-                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                    <path d="M10 11v6" />
-                    <path d="M14 11v6" />
-                  </svg>
-                </button>
-              </div>
-            </td>
-          </tr>
-        `;
-      })
-      .join('');
+    tbody.innerHTML = rows.map((e, i) => {
+      const cls = e.id === state.lastAddedId ? 'row-flash' : 'row-stagger';
+      return `
+        <tr class="${cls}" style="--rd:${Math.min(i * 32, 250)}ms">
+          <td><div class="farmer-pill"><span class="farmer-code">${escapeHtml(e.farmerId)}</span><span class="farmer-name">${escapeHtml(e.farmerName)}</span></div></td>
+          <td><span class="shift-badge">${escapeHtml(e.shift)}</span></td>
+          <td class="num">${formatNum(e.quantity)}</td>
+          <td class="num">${formatNum(e.fat, 1)}%</td>
+          <td class="num">${formatNum(e.snf, 1)}%</td>
+          <td class="num">${formatINR(e.ratePerLiter)}</td>
+          <td class="num">${e.bonusApplied ? `<span class="bonus-chip" title="${escapeHtml(e.bonusLabel||'')}">+${formatINR(e.bonusAmount)}</span>` : '<span style="color:var(--ink3)">—</span>'}</td>
+          <td class="num"><strong style="color:var(--green)">${formatINR(e.totalAmount)}</strong></td>
+          <td>
+            <div class="row-actions">
+              <button type="button" class="btn-slip" data-slip-id="${escapeHtml(e.id)}">Slip</button>
+              <button type="button" class="btn-trash" data-delete-id="${escapeHtml(e.id)}" aria-label="Delete">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                  <path d="M10 11v6"/><path d="M14 11v6"/>
+                </svg>
+              </button>
+            </div>
+          </td>
+        </tr>`;
+    }).join('');
 
     state.lastAddedId = null;
 
-    const totalQty = filtered.reduce((acc, e) => acc + e.quantity, 0);
-    const totalBonus = filtered.reduce((acc, e) => acc + e.bonusAmount, 0);
-    const totalPay = filtered.reduce((acc, e) => acc + e.totalAmount, 0);
+    const tQty = rows.reduce((a, e) => a + e.quantity, 0);
+    const tBonus = rows.reduce((a, e) => a + e.bonusAmount, 0);
+    const tPay = rows.reduce((a, e) => a + e.totalAmount, 0);
 
     tfoot.innerHTML = `
       <tr>
-        <td colspan="2">Total (${filtered.length} entr${filtered.length === 1 ? 'y' : 'ies'})</td>
-        <td class="num">${formatNum(totalQty)} L</td>
+        <td colspan="2">Total (${rows.length})</td>
+        <td class="num">${formatNum(tQty)} L</td>
         <td colspan="3"></td>
-        <td class="num">${formatINR(totalBonus)}</td>
-        <td class="num">${formatINR(totalPay)}</td>
+        <td class="num">${formatINR(tBonus)}</td>
+        <td class="num" style="color:var(--green)">${formatINR(tPay)}</td>
         <td></td>
-      </tr>
-    `;
+      </tr>`;
   }
 
-  $('entriesTableBody').addEventListener('click', async (event) => {
-    const slipBtn = event.target.closest('[data-slip-id]');
-    if (slipBtn) {
-      await openSlipByEntry(slipBtn.dataset.slipId);
-      return;
-    }
-
-    const delBtn = event.target.closest('[data-delete-id]');
+  $('entriesTableBody').addEventListener('click', async e => {
+    const slipBtn = e.target.closest('[data-slip-id]');
+    if (slipBtn) { await openSlip(slipBtn.dataset.slipId); return; }
+    const delBtn = e.target.closest('[data-delete-id]');
     if (delBtn) {
-      const id = delBtn.dataset.deleteId;
       try {
-        await api(`/api/entries/${encodeURIComponent(id)}`, { method: 'DELETE' });
-        showToast('Entry removed from ledger.');
-        await Promise.all([loadDailySummary(), loadFarmers()]);
-      } catch (err) {
-        showToast(err.message, true);
-      }
+        await api(`/api/entries/${encodeURIComponent(delBtn.dataset.deleteId)}`, { method: 'DELETE' });
+        toast('Entry deleted from ledger.');
+        await Promise.all([loadSummary(), loadFarmers()]);
+      } catch (err) { toast(err.message, true); }
     }
   });
 
-  $('summaryDate').addEventListener('change', loadDailySummary);
-  $('farmerSearch').addEventListener('input', renderEntriesTable);
+  $('summaryDate').addEventListener('change', loadSummary);
+  $('farmerSearch').addEventListener('input', renderTable);
 
   $('farmerId').addEventListener('input', () => {
-    const val = $('farmerId').value.trim().toUpperCase();
-    const match = state.farmers.find((f) => f.farmerId.toUpperCase() === val);
-    if (match) {
-      $('farmerName').value = match.farmerName;
-    }
+    const v = $('farmerId').value.trim().toUpperCase();
+    const m = state.farmers.find(f => f.farmerId.toUpperCase() === v);
+    if (m) $('farmerName').value = m.farmerName;
   });
 
-  function updateBonusMeter(qty) {
+  // ─── Live Preview & Gauge ───
+  function updateGauge(qty) {
     const rules = [...(state.rateCard?.bonusRules || [])].sort((a, b) => a.minQuantity - b.minQuantity);
     const fill = $('meterFill');
-    const label = $('meterLabel');
+    const lbl = $('meterLabel');
+    const glow = $('gaugeGlow');
 
-    if (rules.length === 0) {
+    const n = Number.isFinite(qty) && qty > 0 ? qty : 0;
+    if (!rules.length) {
       fill.style.width = '0%';
       fill.classList.remove('qualified');
-      label.textContent = 'No bonus tiers';
+      lbl.textContent = 'No bonus tiers';
+      if (glow) glow.style.opacity = '0';
       return;
     }
 
-    const numericQty = Number.isFinite(qty) && qty > 0 ? qty : 0;
-    const nextTier = rules.find((r) => numericQty < r.minQuantity) || rules[rules.length - 1];
-    const pct = Math.min(100, Math.round((numericQty / nextTier.minQuantity) * 100));
-    const qualified = numericQty >= rules[0].minQuantity;
+    const next = rules.find(r => n < r.minQuantity) || rules[rules.length - 1];
+    const pct = Math.min(100, (n / next.minQuantity) * 100);
+    const qualified = n >= rules[0].minQuantity;
 
     fill.style.width = `${pct}%`;
     fill.classList.toggle('qualified', qualified);
-
-    if (numericQty >= rules[rules.length - 1].minQuantity) {
-      label.textContent = `${formatNum(numericQty, 1)} L · Max tier unlocked`;
-    } else if (qualified) {
-      label.textContent = `${formatNum(numericQty, 1)} / ${nextTier.minQuantity} L (Bonus active)`;
-    } else {
-      label.textContent = `${formatNum(numericQty, 1)} / ${nextTier.minQuantity} L`;
+    if (glow) {
+      glow.style.opacity = pct > 5 ? '0.9' : '0';
+      glow.style.background = qualified ? 'var(--amber)' : 'var(--green)';
+      glow.style.boxShadow = qualified ? '0 0 12px var(--amber)' : '0 0 12px var(--green)';
     }
+
+    if (n >= rules[rules.length - 1].minQuantity) lbl.textContent = `${formatNum(n, 1)} L · Max tier 🎉`;
+    else if (qualified) lbl.textContent = `${formatNum(n, 1)} / ${next.minQuantity} L (Bonus active ✓)`;
+    else lbl.textContent = `${formatNum(n, 1)} / ${next.minQuantity} L`;
   }
 
   let previewSeq = 0;
-  async function updateLivePreview() {
+  async function updatePreview() {
     const qty = Number($('quantity').value);
     const fat = Number($('fat').value);
     const snf = Number($('snf').value);
+    updateGauge(qty);
 
-    updateBonusMeter(qty);
+    const hasInput = Number.isFinite(qty) && qty > 0 && $('fat').value !== '' && $('snf').value !== '' && Number.isFinite(fat) && Number.isFinite(snf);
 
-    if (!Number.isFinite(qty) || qty <= 0 || $('fat').value === '' || $('snf').value === '' || !Number.isFinite(fat) || !Number.isFinite(snf)) {
-      $('previewMatchedSlab').textContent = '—';
-      $('previewRate').textContent = '₹0.00 / L';
+    if (!hasInput) {
+      $('previewMatchedSlab').textContent = 'Awaiting input...';
+      $('previewRate').textContent = '₹0.00';
       $('previewBase').textContent = '₹0.00';
       $('previewBonus').textContent = '₹0.00';
       $('previewTotal').textContent = '₹0.00';
-      $('previewBonusNote').textContent = getNextBonusHint(0);
+      $('previewBonusNote').textContent = nextBonusHint(0);
       return;
     }
 
     const seq = ++previewSeq;
     try {
-      const pricing = await api('/api/calculate', {
-        method: 'POST',
-        body: JSON.stringify({ quantity: qty, fat, snf })
-      });
+      const p = await api('/api/calculate', { method: 'POST', body: JSON.stringify({ quantity: qty, fat, snf }) });
       if (seq !== previewSeq) return;
-
-      const matchKind = pricing.exactMatch ? 'Exact' : 'Slab';
-      $('previewMatchedSlab').textContent = `${matchKind} ${pricing.matchedFat.toFixed(1)}% / ${pricing.matchedSnf.toFixed(1)}%`;
-      $('previewRate').textContent = `${formatINR(pricing.ratePerLiter)} / L`;
-      $('previewBase').textContent = formatINR(pricing.baseAmount);
-      $('previewBonus').textContent = pricing.bonusApplied
-        ? `+${formatINR(pricing.bonusAmount)} (+₹${pricing.bonusPerLiter.toFixed(2)}/L)`
-        : '₹0.00';
-      $('previewTotal').textContent = formatINR(pricing.totalAmount);
-      $('previewBonusNote').textContent = pricing.bonusApplied
-        ? `Applied: ${pricing.bonusLabel}`
-        : getNextBonusHint(qty);
+      $('previewMatchedSlab').textContent = `${p.exactMatch ? 'Exact' : 'Slab'} ${p.matchedFat.toFixed(1)}% / ${p.matchedSnf.toFixed(1)}%`;
+      $('previewRate').textContent = `${formatINR(p.ratePerLiter)} / L`;
+      $('previewBase').textContent = formatINR(p.baseAmount);
+      $('previewBonus').textContent = p.bonusApplied ? `+${formatINR(p.bonusAmount)} (+₹${p.bonusPerLiter.toFixed(2)}/L)` : '₹0.00';
+      $('previewTotal').textContent = formatINR(p.totalAmount);
+      $('previewBonusNote').textContent = p.bonusApplied ? `🎉 ${p.bonusLabel}` : nextBonusHint(qty);
     } catch (err) {
-      $('previewMatchedSlab').textContent = 'Invalid';
+      $('previewMatchedSlab').textContent = 'Invalid input';
       $('previewBonusNote').textContent = err.message;
     }
   }
 
-  function getNextBonusHint(qty) {
+  function nextBonusHint(qty) {
     const rules = state.rateCard?.bonusRules || [];
-    if (rules.length === 0) return 'No volume bonus tiers configured.';
+    if (!rules.length) return 'No volume bonus tiers configured.';
     const sorted = [...rules].sort((a, b) => a.minQuantity - b.minQuantity);
-    const next = sorted.find((r) => qty < r.minQuantity);
+    const next = sorted.find(r => qty < r.minQuantity);
     if (!next) return '';
-    return `Volume incentive: ${next.minQuantity}+ L earns +${formatINR(next.bonusPerLiter)}/L.`;
+    return `🚀 Tip: ${next.minQuantity}+ L earns +${formatINR(next.bonusPerLiter)}/L bonus!`;
   }
 
-  ['quantity', 'fat', 'snf'].forEach((id) => {
-    $(id).addEventListener('input', updateLivePreview);
-  });
+  ['quantity', 'fat', 'snf'].forEach(id => $(id).addEventListener('input', updatePreview));
 
-  $('entryForm').addEventListener('submit', async (event) => {
-    event.preventDefault();
+  // ─── Entry Form Submit ───
+  $('entryForm').addEventListener('submit', async e => {
+    e.preventDefault();
     const payload = {
-      date: $('entryDate').value,
-      shift: $('entryShift').value,
-      farmerId: $('farmerId').value.trim(),
-      farmerName: $('farmerName').value.trim(),
-      quantity: Number($('quantity').value),
-      fat: Number($('fat').value),
-      snf: Number($('snf').value)
+      date: $('entryDate').value, shift: $('entryShift').value,
+      farmerId: $('farmerId').value.trim(), farmerName: $('farmerName').value.trim(),
+      quantity: Number($('quantity').value), fat: Number($('fat').value), snf: Number($('snf').value)
     };
-
     try {
-      const res = await api('/api/entries', {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      });
+      const res = await api('/api/entries', { method: 'POST', body: JSON.stringify(payload) });
       state.lastAddedId = res.entry.id;
-      showToast(`Saved ${formatNum(res.entry.quantity)} L for ${res.entry.farmerName} (${formatINR(res.entry.totalAmount)})`);
+      toast(`✓ Saved ${formatNum(res.entry.quantity)} L for ${res.entry.farmerName} · ${formatINR(res.entry.totalAmount)}`);
       $('summaryDate').value = res.entry.date;
-      $('quantity').value = '';
-      $('fat').value = '';
-      $('snf').value = '';
-      updateLivePreview();
-      await Promise.all([loadDailySummary(), loadFarmers()]);
-    } catch (err) {
-      showToast(err.message, true);
-    }
+      $('quantity').value = ''; $('fat').value = ''; $('snf').value = '';
+      updatePreview();
+      await Promise.all([loadSummary(), loadFarmers()]);
+    } catch (err) { toast(err.message, true); }
   });
 
-  async function openSlipByEntry(entryId) {
+  // ─── Payout Slip ───
+  async function openSlip(entryId) {
     try {
       const slip = await api(`/api/payout-slip?entryId=${encodeURIComponent(entryId)}`);
-      if ($('slipFarmerSelect').querySelector(`option[value="${CSS.escape(slip.farmerId)}"]`)) {
-        $('slipFarmerSelect').value = slip.farmerId;
-      }
-      renderPayoutSlip(slip);
+      renderSlip(slip);
       switchTab('slip');
-    } catch (err) {
-      showToast(err.message, true);
-    }
+    } catch (err) { toast(err.message, true); }
   }
 
-  $('slipFilterForm').addEventListener('submit', async (event) => {
-    event.preventDefault();
+  $('slipFilterForm').addEventListener('submit', async e => {
+    e.preventDefault();
     const farmerId = $('slipFarmerSelect').value;
-    const from = $('slipFromDate').value;
-    const to = $('slipToDate').value;
-
-    if (!farmerId) {
-      showToast('Select a farmer first.', true);
-      return;
-    }
-
-    const params = new URLSearchParams({ farmerId });
-    if (from) params.set('from', from);
-    if (to) params.set('to', to);
-
+    if (!farmerId) { toast('Select a farmer first.', true); return; }
+    const p = new URLSearchParams({ farmerId });
+    const from = $('slipFromDate').value; const to = $('slipToDate').value;
+    if (from) p.set('from', from);
+    if (to) p.set('to', to);
     try {
-      const slip = await api(`/api/payout-slip?${params.toString()}`);
-      renderPayoutSlip(slip);
-    } catch (err) {
-      showToast(err.message, true);
-    }
+      const slip = await api(`/api/payout-slip?${p}`);
+      renderSlip(slip);
+    } catch (err) { toast(err.message, true); }
   });
 
-  function renderPayoutSlip(slip) {
-    state.activeSlip = slip;
+  function renderSlip(slip) {
     $('printSlipBtn').disabled = false;
+    const gen = new Date(slip.generatedAt).toLocaleString();
 
-    const generatedLocal = new Date(slip.generatedAt).toLocaleString();
-    const rowsHtml = slip.items
-      .map((item) => `
-        <tr>
-          <td class="mono">${escapeHtml(item.date)}</td>
-          <td>${escapeHtml(item.shift)}</td>
-          <td class="num">${formatNum(item.quantity)}</td>
-          <td class="num">${formatNum(item.fat, 1)}%</td>
-          <td class="num">${formatNum(item.snf, 1)}%</td>
-          <td class="num">${formatINR(item.ratePerLiter)}</td>
-          <td class="num">${formatINR(item.baseAmount)}</td>
-          <td class="num">${item.bonusApplied ? `+${formatINR(item.bonusAmount)}` : '—'}</td>
-          <td class="num"><strong>${formatINR(item.totalAmount)}</strong></td>
-        </tr>
-      `)
-      .join('');
+    const rows = slip.items.map(item => `
+      <tr>
+        <td class="mono">${escapeHtml(item.date)}</td><td>${escapeHtml(item.shift)}</td>
+        <td class="num">${formatNum(item.quantity)}</td>
+        <td class="num">${formatNum(item.fat, 1)}%</td><td class="num">${formatNum(item.snf, 1)}%</td>
+        <td class="num">${formatINR(item.ratePerLiter)}</td>
+        <td class="num">${formatINR(item.baseAmount)}</td>
+        <td class="num">${item.bonusApplied ? `+${formatINR(item.bonusAmount)}` : '—'}</td>
+        <td class="num"><strong style="color:var(--green)">${formatINR(item.totalAmount)}</strong></td>
+      </tr>`).join('');
 
-    const container = $('slipContainer');
-    container.className = 'statement-paper';
-    container.innerHTML = `
-      <div class="statement-header">
-        <div>
-          <h2>PARADOX DAIRY — PAYOUT STATEMENT</h2>
-          <p>Collection Center #01 · Milk Atelier Settlement</p>
-        </div>
-        <div style="text-align:right">
-          <strong class="mono">${escapeHtml(slip.slipNumber)}</strong>
-          <p>${escapeHtml(generatedLocal)}</p>
-        </div>
-      </div>
-
-      <div class="statement-meta">
-        <div>
-          <span>Farmer Name</span>
-          <strong>${escapeHtml(slip.farmerName)}</strong>
-        </div>
-        <div>
-          <span>Farmer Code</span>
-          <strong class="mono">${escapeHtml(slip.farmerId)}</strong>
-        </div>
-        <div>
-          <span>Settlement Period</span>
-          <strong class="mono">${escapeHtml(slip.periodFrom)} → ${escapeHtml(slip.periodTo)}</strong>
-        </div>
-        <div>
-          <span>Weighted Avg Quality</span>
-          <strong class="mono">${formatNum(slip.summary.avgFat, 1)}% Fat · ${formatNum(slip.summary.avgSnf, 1)}% SNF</strong>
-        </div>
-      </div>
-
-      <div class="table-scroll">
-        <table class="ledger-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Shift</th>
-              <th class="num">Qty (L)</th>
-              <th class="num">Fat</th>
-              <th class="num">SNF</th>
-              <th class="num">Rate/L</th>
-              <th class="num">Base</th>
-              <th class="num">Bonus</th>
-              <th class="num">Total</th>
-            </tr>
-          </thead>
-          <tbody>${rowsHtml}</tbody>
-        </table>
-      </div>
-
-      <div class="statement-bottom">
-        <svg class="verified-stamp" viewBox="0 0 120 120" aria-label="Verified Settlement Seal">
-          <circle cx="60" cy="60" r="52" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="4 3" />
-          <circle cx="60" cy="60" r="42" fill="none" stroke="currentColor" stroke-width="1.2" />
-          <text x="60" y="54" text-anchor="middle" font-family="Fraunces, serif" font-size="11" font-weight="700" fill="currentColor">VERIFIED</text>
-          <text x="60" y="69" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" font-weight="600" fill="currentColor">PARADOX DAIRY</text>
-        </svg>
-
-        <div class="statement-totals">
-          <div class="statement-total-row">
-            <span>Deliveries</span>
-            <span class="mono">${slip.summary.entryCount}</span>
+    $('slipContainer').outerHTML = `
+      <div id="slipContainer" class="statement-sheet">
+        <div class="stmt-header">
+          <div>
+            <h2>Paradox Dairy — Payout Statement</h2>
+            <p>Collection Center #01 · Farmer Milk Settlement</p>
           </div>
-          <div class="statement-total-row">
-            <span>Total Volume</span>
-            <span class="mono">${formatNum(slip.summary.totalQuantity)} L</span>
-          </div>
-          <div class="statement-total-row">
-            <span>Gross Base Amount</span>
-            <span class="mono">${formatINR(slip.summary.totalBaseAmount)}</span>
-          </div>
-          <div class="statement-total-row">
-            <span>High-Quantity Bonus</span>
-            <span class="mono amber-text">+ ${formatINR(slip.summary.totalBonusAmount)}</span>
-          </div>
-          <div class="statement-total-row net">
-            <span>Net Payable</span>
-            <span class="mono emerald-text">${formatINR(slip.summary.totalPayable)}</span>
+          <div style="text-align:right">
+            <strong class="mono" style="color:var(--green)">${escapeHtml(slip.slipNumber)}</strong>
+            <p style="font-size:12px;color:var(--ink3)">${escapeHtml(gen)}</p>
           </div>
         </div>
-      </div>
 
-      <div class="statement-sigs">
-        <div class="sig-box">Farmer Signature</div>
-        <div class="sig-box">Authorized Signatory</div>
-      </div>
-    `;
+        <div class="stmt-meta">
+          <div><span>Farmer Name</span><strong>${escapeHtml(slip.farmerName)}</strong></div>
+          <div><span>Farmer Code</span><strong class="mono">${escapeHtml(slip.farmerId)}</strong></div>
+          <div><span>Period</span><strong class="mono">${escapeHtml(slip.periodFrom)} → ${escapeHtml(slip.periodTo)}</strong></div>
+          <div><span>Avg Quality</span><strong class="mono">${formatNum(slip.summary.avgFat, 1)}% Fat · ${formatNum(slip.summary.avgSnf, 1)}% SNF</strong></div>
+        </div>
+
+        <div class="table-scroll">
+          <table class="ledger-table">
+            <thead><tr>
+              <th>Date</th><th>Shift</th><th class="num">Qty</th><th class="num">Fat</th>
+              <th class="num">SNF</th><th class="num">Rate/L</th><th class="num">Base</th>
+              <th class="num">Bonus</th><th class="num">Total</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+
+        <div class="stmt-bottom">
+          <svg class="verified-seal" viewBox="0 0 110 110">
+            <circle cx="55" cy="55" r="48" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="4 3"/>
+            <circle cx="55" cy="55" r="38" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <text x="55" y="50" text-anchor="middle" font-family="Syne,sans-serif" font-size="10" font-weight="800" fill="currentColor">VERIFIED</text>
+            <text x="55" y="65" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" font-weight="600" fill="currentColor">PARADOX DAIRY</text>
+          </svg>
+
+          <div class="stmt-totals">
+            <div class="stmt-row"><span>Deliveries</span><span class="mono">${slip.summary.entryCount}</span></div>
+            <div class="stmt-row"><span>Total Volume</span><span class="mono">${formatNum(slip.summary.totalQuantity)} L</span></div>
+            <div class="stmt-row"><span>Gross Base</span><span class="mono">${formatINR(slip.summary.totalBaseAmount)}</span></div>
+            <div class="stmt-row"><span>Volume Bonus</span><span class="mono" style="color:var(--amber)">+ ${formatINR(slip.summary.totalBonusAmount)}</span></div>
+            <div class="stmt-row net"><span>Net Payable</span><span class="mono">${formatINR(slip.summary.totalPayable)}</span></div>
+          </div>
+        </div>
+
+        <div class="stmt-sigs">
+          <div class="sig-line">Farmer Signature</div>
+          <div class="sig-line">Authorized Signatory</div>
+        </div>
+      </div>`;
   }
 
   $('printSlipBtn').addEventListener('click', () => window.print());
 
+  // ─── Rate Card ───
   async function loadRateCard() {
     state.rateCard = await api('/api/rate-card');
     state.dirtyCells.clear();
-    updateSidebarBonusHint();
-    renderBonusRules();
-    renderRateMatrix();
+    updateSidebarHint();
+    renderBonusSlabs();
+    renderMatrix();
   }
 
-  function updateSidebarBonusHint() {
+  function updateSidebarHint() {
     const rules = state.rateCard?.bonusRules || [];
-    if (rules.length === 0) {
-      $('sidebarBonusHint').textContent = 'No active bonus tiers';
-      return;
-    }
-    const summary = [...rules]
-      .sort((a, b) => a.minQuantity - b.minQuantity)
-      .map((r) => `${r.minQuantity}L+: +₹${r.bonusPerLiter}`)
-      .join(' · ');
-    $('sidebarBonusHint').textContent = summary;
+    if (!rules.length) { $('sidebarBonusHint').textContent = 'No bonus tiers'; return; }
+    $('sidebarBonusHint').textContent = [...rules].sort((a, b) => a.minQuantity - b.minQuantity)
+      .map(r => `${r.minQuantity}L+ → +₹${r.bonusPerLiter}`).join(' · ');
   }
 
-  function renderBonusRules() {
+  function renderBonusSlabs() {
     const list = $('bonusRulesList');
     const rules = state.rateCard.bonusRules || [];
-
-    if (rules.length === 0) {
-      list.innerHTML = `<p class="panel-sub">No bonus slabs configured. Add a tier to reward high-volume deliveries.</p>`;
+    if (!rules.length) {
+      list.innerHTML = `<p class="card-sub">No slabs configured. Add a tier to incentivize bulk deliveries.</p>`;
       return;
     }
-
-    list.innerHTML = rules
-      .map((rule, idx) => `
-        <div class="bonus-slab-row" data-rule-idx="${idx}">
-          <div class="field">
-            <label>Min Quantity</label>
-            <div class="input-unit">
-              <input type="number" step="0.5" min="1" class="mono bonus-min-qty" value="${rule.minQuantity}" />
-              <span>L</span>
-            </div>
+    list.innerHTML = rules.map((r, i) => `
+      <div class="bonus-row" data-idx="${i}">
+        <div class="field">
+          <label>Min Qty</label>
+          <div class="input-wrap unit-wrap">
+            <input type="number" step="0.5" min="1" class="mono bonus-qty" value="${r.minQuantity}" />
+            <span class="unit-badge">L</span>
           </div>
-          <div class="field">
-            <label>Bonus Rate</label>
-            <div class="input-unit">
-              <input type="number" step="0.25" min="0" class="mono bonus-per-liter" value="${rule.bonusPerLiter}" />
-              <span>₹</span>
-            </div>
-          </div>
-          <div class="field">
-            <label>Tier Label</label>
-            <input type="text" class="bonus-label" value="${escapeHtml(rule.label)}" />
-          </div>
-          <button type="button" class="btn-icon-danger remove-bonus-btn" title="Remove tier" aria-label="Remove tier">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
         </div>
-      `)
-      .join('');
+        <div class="field">
+          <label>Bonus Rate</label>
+          <div class="input-wrap unit-wrap">
+            <input type="number" step="0.25" min="0" class="mono bonus-rate" value="${r.bonusPerLiter}" />
+            <span class="unit-badge">₹</span>
+          </div>
+        </div>
+        <div class="field">
+          <label>Label</label>
+          <input type="text" class="bonus-lbl" value="${escapeHtml(r.label)}" />
+        </div>
+        <button type="button" class="btn-trash rm-bonus" title="Remove">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>`).join('');
   }
 
-  $('bonusRulesList').addEventListener('input', (event) => {
-    const row = event.target.closest('.bonus-slab-row');
+  $('bonusRulesList').addEventListener('input', e => {
+    const row = e.target.closest('.bonus-row');
     if (!row) return;
-    const idx = Number(row.dataset.ruleIdx);
-    const rule = state.rateCard.bonusRules[idx];
-    if (!rule) return;
-
-    if (event.target.classList.contains('bonus-min-qty')) {
-      rule.minQuantity = Number(event.target.value);
-    } else if (event.target.classList.contains('bonus-per-liter')) {
-      rule.bonusPerLiter = Number(event.target.value);
-    } else if (event.target.classList.contains('bonus-label')) {
-      rule.label = event.target.value;
-    }
+    const r = state.rateCard.bonusRules[Number(row.dataset.idx)];
+    if (!r) return;
+    if (e.target.classList.contains('bonus-qty')) r.minQuantity = Number(e.target.value);
+    else if (e.target.classList.contains('bonus-rate')) r.bonusPerLiter = Number(e.target.value);
+    else if (e.target.classList.contains('bonus-lbl')) r.label = e.target.value;
   });
 
-  $('bonusRulesList').addEventListener('click', (event) => {
-    const btn = event.target.closest('.remove-bonus-btn');
+  $('bonusRulesList').addEventListener('click', e => {
+    const btn = e.target.closest('.rm-bonus');
     if (!btn) return;
-    const idx = Number(btn.closest('.bonus-slab-row').dataset.ruleIdx);
-    state.rateCard.bonusRules.splice(idx, 1);
-    renderBonusRules();
+    state.rateCard.bonusRules.splice(Number(btn.closest('.bonus-row').dataset.idx), 1);
+    renderBonusSlabs();
   });
 
   $('addBonusRuleBtn').addEventListener('click', () => {
-    const existing = state.rateCard.bonusRules;
-    const nextQty = existing.length > 0 ? Math.max(...existing.map((r) => r.minQuantity)) + 10 : 20;
-    existing.push({
-      minQuantity: nextQty,
-      bonusPerLiter: 2.0,
-      label: `Bulk Tier (${nextQty}+ L)`
-    });
-    renderBonusRules();
+    const ex = state.rateCard.bonusRules;
+    const nxt = ex.length ? Math.max(...ex.map(r => r.minQuantity)) + 10 : 20;
+    ex.push({ minQuantity: nxt, bonusPerLiter: 2.0, label: `Bulk Tier (${nxt}+ L)` });
+    renderBonusSlabs();
   });
 
-  function computeHeatmapRange(fatSteps, snfSteps, rates) {
-    let min = Infinity;
-    let max = -Infinity;
-    for (const fat of fatSteps) {
-      const fKey = fat.toFixed(1);
-      for (const snf of snfSteps) {
-        const sKey = snf.toFixed(1);
-        const val = Number(rates[fKey]?.[sKey]);
-        if (Number.isFinite(val)) {
-          if (val < min) min = val;
-          if (val > max) max = val;
-        }
-      }
+  function heatRange(fatSteps, snfSteps, rates) {
+    let min = Infinity, max = -Infinity;
+    for (const f of fatSteps) for (const s of snfSteps) {
+      const v = Number(rates[f.toFixed(1)]?.[s.toFixed(1)]);
+      if (Number.isFinite(v)) { if (v < min) min = v; if (v > max) max = v; }
     }
     return { min, max: max > min ? max : min + 1 };
   }
 
-  function renderRateMatrix() {
-    const table = $('rateMatrixTable');
+  function renderMatrix() {
+    const tbl = $('rateMatrixTable');
     const { fatSteps, snfSteps, rates } = state.rateCard;
-    const { min, max } = computeHeatmapRange(fatSteps, snfSteps, rates);
+    const { min, max } = heatRange(fatSteps, snfSteps, rates);
 
-    const headerCols = snfSteps
-      .map((snf) => {
-        const sKey = snf.toFixed(1);
-        return `
-          <th>
-            <span class="step-header mono">
-              ${sKey}%
-              ${snfSteps.length > 1 ? `<button type="button" class="remove-step-btn" data-remove-snf="${snf}" title="Remove SNF column">×</button>` : ''}
-            </span>
-          </th>
-        `;
-      })
-      .join('');
+    const hd = snfSteps.map(s => `
+      <th><span class="step-hdr mono">
+        ${s.toFixed(1)}%
+        ${snfSteps.length > 1 ? `<button class="rm-step" data-rm-snf="${s}">×</button>` : ''}
+      </span></th>`).join('');
 
-    const bodyRows = fatSteps
-      .map((fat) => {
-        const fKey = fat.toFixed(1);
-        const cells = snfSteps
-          .map((snf) => {
-            const sKey = snf.toFixed(1);
-            const cellKey = `${fKey}|${sKey}`;
-            const val = Number(rates[fKey]?.[sKey] ?? 0);
-            const ratio = Math.max(0, Math.min(1, (val - min) / (max - min)));
-            const tintAlpha = (0.04 + ratio * 0.22).toFixed(3);
-            const dirtyClass = state.dirtyCells.has(cellKey) ? ' dirty' : '';
-            return `
-              <td style="background: rgba(20, 83, 56, ${tintAlpha})">
-                <input
-                  type="number"
-                  step="0.05"
-                  min="0"
-                  class="rate-cell-input${dirtyClass}"
-                  data-fat="${fKey}"
-                  data-snf="${sKey}"
-                  value="${val.toFixed(2)}"
-                />
-              </td>
-            `;
-          })
-          .join('');
+    const body = fatSteps.map(f => {
+      const fk = f.toFixed(1);
+      const cells = snfSteps.map(s => {
+        const sk = s.toFixed(1);
+        const v = Number(rates[fk]?.[sk] ?? 0);
+        const ratio = Math.max(0, Math.min(1, (v - min) / (max - min)));
+        const a = (0.03 + ratio * 0.28).toFixed(3);
+        const dirty = state.dirtyCells.has(`${fk}|${sk}`) ? ' dirty' : '';
+        return `<td style="background:rgba(20,232,126,${a})">
+          <input type="number" step="0.05" min="0" class="rate-input${dirty}" data-fat="${fk}" data-snf="${sk}" value="${v.toFixed(2)}" />
+        </td>`;
+      }).join('');
+      return `<tr>
+        <th><span class="step-hdr mono">
+          ${fk}%
+          ${fatSteps.length > 1 ? `<button class="rm-step" data-rm-fat="${f}">×</button>` : ''}
+        </span></th>
+        ${cells}
+      </tr>`;
+    }).join('');
 
-        return `
-          <tr>
-            <th>
-              <span class="step-header mono">
-                ${fKey}%
-                ${fatSteps.length > 1 ? `<button type="button" class="remove-step-btn" data-remove-fat="${fat}" title="Remove Fat row">×</button>` : ''}
-              </span>
-            </th>
-            ${cells}
-          </tr>
-        `;
-      })
-      .join('');
-
-    table.innerHTML = `
-      <thead>
-        <tr>
-          <th class="corner-cell">Fat \\ SNF</th>
-          ${headerCols}
-        </tr>
-      </thead>
-      <tbody>${bodyRows}</tbody>
-    `;
+    tbl.innerHTML = `<thead><tr><th class="corner-cell">Fat\\SNF</th>${hd}</tr></thead><tbody>${body}</tbody>`;
   }
 
-  $('rateMatrixTable').addEventListener('input', (event) => {
-    const input = event.target.closest('.rate-cell-input');
-    if (!input) return;
-    const fKey = input.dataset.fat;
-    const sKey = input.dataset.snf;
-    const val = Number(input.value);
-    if (!state.rateCard.rates[fKey]) state.rateCard.rates[fKey] = {};
-    state.rateCard.rates[fKey][sKey] = Number.isFinite(val) ? val : 0;
-    state.dirtyCells.add(`${fKey}|${sKey}`);
-    input.classList.add('dirty');
+  $('rateMatrixTable').addEventListener('input', e => {
+    const inp = e.target.closest('.rate-input');
+    if (!inp) return;
+    const fk = inp.dataset.fat, sk = inp.dataset.snf;
+    const v = Number(inp.value);
+    if (!state.rateCard.rates[fk]) state.rateCard.rates[fk] = {};
+    state.rateCard.rates[fk][sk] = Number.isFinite(v) ? v : 0;
+    state.dirtyCells.add(`${fk}|${sk}`);
+    inp.classList.add('dirty');
   });
 
-  $('rateMatrixTable').addEventListener('click', (event) => {
-    const remFat = event.target.closest('[data-remove-fat]');
-    if (remFat) {
-      const target = Number(remFat.dataset.removeFat);
-      state.rateCard.fatSteps = state.rateCard.fatSteps.filter((v) => Math.abs(v - target) > 1e-6);
-      delete state.rateCard.rates[target.toFixed(1)];
-      renderRateMatrix();
-      return;
+  $('rateMatrixTable').addEventListener('click', e => {
+    const rf = e.target.closest('[data-rm-fat]');
+    if (rf) {
+      const t = Number(rf.dataset.rmFat);
+      state.rateCard.fatSteps = state.rateCard.fatSteps.filter(v => Math.abs(v - t) > 1e-6);
+      delete state.rateCard.rates[t.toFixed(1)];
+      renderMatrix(); return;
     }
-
-    const remSnf = event.target.closest('[data-remove-snf]');
-    if (remSnf) {
-      const target = Number(remSnf.dataset.removeSnf);
-      const sKey = target.toFixed(1);
-      state.rateCard.snfSteps = state.rateCard.snfSteps.filter((v) => Math.abs(v - target) > 1e-6);
-      for (const fKey of Object.keys(state.rateCard.rates)) {
-        delete state.rateCard.rates[fKey][sKey];
-      }
-      renderRateMatrix();
+    const rs = e.target.closest('[data-rm-snf]');
+    if (rs) {
+      const t = Number(rs.dataset.rmSnf), sk = t.toFixed(1);
+      state.rateCard.snfSteps = state.rateCard.snfSteps.filter(v => Math.abs(v - t) > 1e-6);
+      for (const fk of Object.keys(state.rateCard.rates)) delete state.rateCard.rates[fk][sk];
+      renderMatrix();
     }
   });
 
   $('addFatBtn').addEventListener('click', () => {
-    const val = Number($('newFatStep').value);
-    if (!Number.isFinite(val) || val < 0 || val > 20) {
-      showToast('Enter a Fat % between 0 and 20.', true);
-      return;
-    }
-    const fKey = val.toFixed(1);
-    if (state.rateCard.fatSteps.some((v) => v.toFixed(1) === fKey)) {
-      showToast(`Fat ${fKey}% row already exists.`, true);
-      return;
-    }
-    const nearestFat = state.rateCard.fatSteps[state.rateCard.fatSteps.length - 1].toFixed(1);
-    state.rateCard.fatSteps = [...state.rateCard.fatSteps, Number(fKey)].sort((a, b) => a - b);
-    state.rateCard.rates[fKey] = {};
-    for (const snf of state.rateCard.snfSteps) {
-      const sKey = snf.toFixed(1);
-      state.rateCard.rates[fKey][sKey] = Number(state.rateCard.rates[nearestFat]?.[sKey] ?? 35);
-      state.dirtyCells.add(`${fKey}|${sKey}`);
+    const v = Number($('newFatStep').value);
+    if (!Number.isFinite(v) || v < 0 || v > 20) { toast('Enter Fat % 0–20.', true); return; }
+    const fk = v.toFixed(1);
+    if (state.rateCard.fatSteps.some(x => x.toFixed(1) === fk)) { toast(`Fat ${fk}% already exists.`, true); return; }
+    const nearest = state.rateCard.fatSteps[state.rateCard.fatSteps.length - 1].toFixed(1);
+    state.rateCard.fatSteps = [...state.rateCard.fatSteps, v].sort((a, b) => a - b);
+    state.rateCard.rates[fk] = {};
+    for (const s of state.rateCard.snfSteps) {
+      const sk = s.toFixed(1);
+      state.rateCard.rates[fk][sk] = Number(state.rateCard.rates[nearest]?.[sk] ?? 35);
+      state.dirtyCells.add(`${fk}|${sk}`);
     }
     $('newFatStep').value = '';
-    renderRateMatrix();
+    renderMatrix();
   });
 
   $('addSnfBtn').addEventListener('click', () => {
-    const val = Number($('newSnfStep').value);
-    if (!Number.isFinite(val) || val < 0 || val > 20) {
-      showToast('Enter an SNF % between 0 and 20.', true);
-      return;
-    }
-    const sKey = val.toFixed(1);
-    if (state.rateCard.snfSteps.some((v) => v.toFixed(1) === sKey)) {
-      showToast(`SNF ${sKey}% column already exists.`, true);
-      return;
-    }
-    const nearestSnf = state.rateCard.snfSteps[state.rateCard.snfSteps.length - 1].toFixed(1);
-    state.rateCard.snfSteps = [...state.rateCard.snfSteps, Number(sKey)].sort((a, b) => a - b);
-    for (const fat of state.rateCard.fatSteps) {
-      const fKey = fat.toFixed(1);
-      state.rateCard.rates[fKey][sKey] = Number(state.rateCard.rates[fKey]?.[nearestSnf] ?? 35);
-      state.dirtyCells.add(`${fKey}|${sKey}`);
+    const v = Number($('newSnfStep').value);
+    if (!Number.isFinite(v) || v < 0 || v > 20) { toast('Enter SNF % 0–20.', true); return; }
+    const sk = v.toFixed(1);
+    if (state.rateCard.snfSteps.some(x => x.toFixed(1) === sk)) { toast(`SNF ${sk}% already exists.`, true); return; }
+    const nearest = state.rateCard.snfSteps[state.rateCard.snfSteps.length - 1].toFixed(1);
+    state.rateCard.snfSteps = [...state.rateCard.snfSteps, v].sort((a, b) => a - b);
+    for (const f of state.rateCard.fatSteps) {
+      const fk = f.toFixed(1);
+      state.rateCard.rates[fk][sk] = Number(state.rateCard.rates[fk]?.[nearest] ?? 35);
+      state.dirtyCells.add(`${fk}|${sk}`);
     }
     $('newSnfStep').value = '';
-    renderRateMatrix();
+    renderMatrix();
   });
 
   $('applyBulkDeltaBtn').addEventListener('click', () => {
     const delta = Number($('bulkDelta').value);
-    if (!Number.isFinite(delta) || delta === 0) {
-      showToast('Enter a non-zero ₹/L adjustment.', true);
-      return;
-    }
-    for (const fat of state.rateCard.fatSteps) {
-      const fKey = fat.toFixed(1);
-      for (const snf of state.rateCard.snfSteps) {
-        const sKey = snf.toFixed(1);
-        const nextVal = Math.max(0, Number(state.rateCard.rates[fKey][sKey]) + delta);
-        state.rateCard.rates[fKey][sKey] = Math.round(nextVal * 100) / 100;
-        state.dirtyCells.add(`${fKey}|${sKey}`);
+    if (!Number.isFinite(delta) || delta === 0) { toast('Enter a non-zero ± amount.', true); return; }
+    for (const f of state.rateCard.fatSteps) {
+      const fk = f.toFixed(1);
+      for (const s of state.rateCard.snfSteps) {
+        const sk = s.toFixed(1);
+        const nv = Math.max(0, Number(state.rateCard.rates[fk][sk]) + delta);
+        state.rateCard.rates[fk][sk] = Math.round(nv * 100) / 100;
+        state.dirtyCells.add(`${fk}|${sk}`);
       }
     }
     $('bulkDelta').value = '';
-    renderRateMatrix();
-    showToast(`Adjusted all rates by ${delta > 0 ? '+' : ''}₹${delta.toFixed(2)}/L. Save Rate Card to apply.`);
+    renderMatrix();
+    toast(`${delta > 0 ? '+' : ''}₹${delta.toFixed(2)}/L applied to all cells. Save to confirm.`);
   });
 
   $('saveRateCardBtn').addEventListener('click', async () => {
     try {
-      const updated = await api('/api/rate-card', {
-        method: 'PUT',
-        body: JSON.stringify(state.rateCard)
-      });
-      state.rateCard = updated;
-      state.dirtyCells.clear();
-      updateSidebarBonusHint();
-      renderBonusRules();
-      renderRateMatrix();
-      updateLivePreview();
-      showToast('Rate chart and bonus slabs saved.');
-    } catch (err) {
-      showToast(err.message, true);
-    }
+      const updated = await api('/api/rate-card', { method: 'PUT', body: JSON.stringify(state.rateCard) });
+      state.rateCard = updated; state.dirtyCells.clear();
+      updateSidebarHint(); renderBonusSlabs(); renderMatrix(); updatePreview();
+      toast('✓ Rate chart and bonus slabs saved!');
+    } catch (err) { toast(err.message, true); }
   });
 
   $('resetRateCardBtn').addEventListener('click', async () => {
     try {
-      const reset = await api('/api/rate-card/reset', { method: 'POST' });
-      state.rateCard = reset;
-      state.dirtyCells.clear();
-      updateSidebarBonusHint();
-      renderBonusRules();
-      renderRateMatrix();
-      updateLivePreview();
-      showToast('Rate chart reset to defaults.');
-    } catch (err) {
-      showToast(err.message, true);
-    }
+      const r = await api('/api/rate-card/reset', { method: 'POST' });
+      state.rateCard = r; state.dirtyCells.clear();
+      updateSidebarHint(); renderBonusSlabs(); renderMatrix(); updatePreview();
+      toast('Rate chart reset to defaults.');
+    } catch (err) { toast(err.message, true); }
   });
 
-  init().catch((err) => showToast(err.message, true));
+  init().catch(err => toast(err.message, true));
 })();
