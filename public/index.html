@@ -3,281 +3,357 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Paradox Dairy — Milk Collection &amp; Payout Center</title>
+  <title>Paradox Dairy — Collection &amp; Settlement</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <header class="topbar no-print">
-    <div class="container topbar-inner">
-      <div class="brand">
-        <div class="brand-mark" aria-hidden="true">🥛</div>
-        <div>
-          <h1>Paradox Dairy</h1>
-          <p class="subtitle">Milk Collection, Rate Card &amp; Payout System</p>
+  <div class="app-shell">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar no-print" aria-label="Workspace Navigation">
+      <div class="sidebar-brand">
+        <div class="brand-logo" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-name">Paradox Dairy</span>
+          <span class="brand-sub">Collection Center #01</span>
         </div>
       </div>
 
-      <nav class="tabs" aria-label="Primary Navigation">
-        <button class="tab-btn active" data-tab="collection">Collection &amp; Daily Log</button>
-        <button class="tab-btn" data-tab="slip">Payout Slip</button>
-        <button class="tab-btn" data-tab="rates">Rate Chart &amp; Bonus</button>
+      <nav class="nav-list">
+        <button class="nav-item active" data-tab="collection" type="button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="14" width="7" height="7" rx="1" />
+            <rect x="3" y="14" width="7" height="7" rx="1" />
+          </svg>
+          <span>Daily Collection</span>
+        </button>
+
+        <button class="nav-item" data-tab="slip" type="button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="8" y1="13" x2="16" y2="13" />
+            <line x1="8" y1="17" x2="13" y2="17" />
+          </svg>
+          <span>Payout Slips</span>
+        </button>
+
+        <button class="nav-item" data-tab="rates" type="button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="4" y1="21" x2="4" y2="14" />
+            <line x1="4" y1="10" x2="4" y2="3" />
+            <line x1="12" y1="21" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12" y2="3" />
+            <line x1="20" y1="21" x2="20" y2="16" />
+            <line x1="20" y1="12" x2="20" y2="3" />
+            <line x1="1" y1="14" x2="7" y2="14" />
+            <line x1="9" y1="8" x2="15" y2="8" />
+            <line x1="17" y1="16" x2="23" y2="16" />
+          </svg>
+          <span>Rate Chart &amp; Bonus</span>
+        </button>
       </nav>
-    </div>
-  </header>
 
-  <main class="container main-content">
-    <div id="toast" class="toast no-print" role="status" aria-live="polite"></div>
-
-    <!-- TAB 1: COLLECTION & DAILY LOG -->
-    <section id="tab-collection" class="tab-panel active">
-      <div class="section-header">
-        <div>
-          <h2>Daily Collection Overview</h2>
-          <p class="muted">Real-time totals, auto rate-card lookup, and high-quantity bonus calculation</p>
+      <div class="sidebar-footer">
+        <div class="status-row">
+          <span class="status-dot"></span>
+          <span>Local Ledger Active</span>
         </div>
-        <div class="date-controls">
-          <label for="summaryDate">Collection Date</label>
-          <input type="date" id="summaryDate" />
-        </div>
+        <p class="sidebar-hint" id="sidebarBonusHint">Bonus slabs loaded</p>
       </div>
+    </aside>
 
-      <div class="kpi-grid">
-        <article class="kpi-card">
-          <span class="kpi-label">Daily Total Milk</span>
-          <strong class="kpi-value" id="kpiTotalQty">0.00 L</strong>
-          <span class="kpi-meta" id="kpiFarmers">0 farmers · 0 entries</span>
-        </article>
-        <article class="kpi-card highlight">
-          <span class="kpi-label">Daily Total Payout</span>
-          <strong class="kpi-value" id="kpiTotalPayable">₹0.00</strong>
-          <span class="kpi-meta" id="kpiBaseAmount">Base: ₹0.00</span>
-        </article>
-        <article class="kpi-card bonus-card">
-          <span class="kpi-label">High-Qty Bonus Applied</span>
-          <strong class="kpi-value" id="kpiTotalBonus">₹0.00</strong>
-          <span class="kpi-meta" id="kpiBonusCount">0 qualifying entries</span>
-        </article>
-        <article class="kpi-card">
-          <span class="kpi-label">Weighted Avg Quality</span>
-          <strong class="kpi-value" id="kpiAvgQuality">0.0% / 0.0%</strong>
-          <span class="kpi-meta" id="kpiAvgRate">Avg Rate: ₹0.00/L</span>
-        </article>
-      </div>
+    <!-- Main Workspace -->
+    <div class="workspace">
+      <div id="toast" class="toast no-print" role="status" aria-live="polite"></div>
 
-      <div class="workspace-grid">
-        <!-- Entry Form -->
-        <div class="card">
-          <div class="card-header">
-            <h3>Log Farmer Milk Entry</h3>
-            <span class="pill">Auto Rate Lookup</span>
-          </div>
-
-          <form id="entryForm" class="entry-form">
-            <div class="form-row two-col">
-              <div class="field">
-                <label for="entryDate">Date</label>
-                <input type="date" id="entryDate" required />
-              </div>
-              <div class="field">
-                <label for="entryShift">Shift</label>
-                <select id="entryShift">
-                  <option value="Morning">Morning</option>
-                  <option value="Evening">Evening</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="form-row two-col">
-              <div class="field">
-                <label for="farmerId">Farmer ID</label>
-                <input type="text" id="farmerId" list="farmerList" placeholder="e.g. F-101" required />
-                <datalist id="farmerList"></datalist>
-              </div>
-              <div class="field">
-                <label for="farmerName">Farmer Name</label>
-                <input type="text" id="farmerName" placeholder="e.g. Ramesh Patel" required />
-              </div>
-            </div>
-
-            <div class="form-row three-col">
-              <div class="field">
-                <label for="quantity">Quantity (L)</label>
-                <input type="number" id="quantity" step="0.1" min="0.1" placeholder="25.0" required />
-              </div>
-              <div class="field">
-                <label for="fat">Fat (%)</label>
-                <input type="number" id="fat" step="0.1" min="0" max="20" placeholder="4.5" required />
-              </div>
-              <div class="field">
-                <label for="snf">SNF (%)</label>
-                <input type="number" id="snf" step="0.1" min="0" max="20" placeholder="8.5" required />
-              </div>
-            </div>
-
-            <!-- Live Preview Box -->
-            <div id="livePreview" class="preview-box">
-              <div class="preview-header">
-                <span>Live Price Estimate</span>
-                <span id="previewMatchedSlab" class="slab-tag">Enter Qty, Fat &amp; SNF</span>
-              </div>
-              <div class="preview-grid">
-                <div>
-                  <span class="preview-label">Rate / Liter</span>
-                  <strong id="previewRate">₹0.00</strong>
-                </div>
-                <div>
-                  <span class="preview-label">Base Amount</span>
-                  <strong id="previewBase">₹0.00</strong>
-                </div>
-                <div>
-                  <span class="preview-label">Bonus</span>
-                  <strong id="previewBonus" class="bonus-text">₹0.00</strong>
-                </div>
-                <div>
-                  <span class="preview-label">Total Payable</span>
-                  <strong id="previewTotal" class="total-text">₹0.00</strong>
-                </div>
-              </div>
-              <p id="previewBonusNote" class="preview-note"></p>
-            </div>
-
-            <button type="submit" class="btn btn-primary btn-block">Log Milk Entry</button>
-          </form>
-        </div>
-
-        <!-- Daily Entries Table -->
-        <div class="card">
-          <div class="card-header">
-            <div>
-              <h3>Daily Collection Register</h3>
-              <p class="muted small" id="registerSubtitle">Showing entries for selected date</p>
-            </div>
-            <div class="filter-inline">
-              <input type="search" id="farmerSearch" placeholder="Filter by farmer ID or name..." />
-            </div>
-          </div>
-
-          <div class="table-wrap">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Farmer</th>
-                  <th>Shift</th>
-                  <th class="num">Qty (L)</th>
-                  <th class="num">Fat %</th>
-                  <th class="num">SNF %</th>
-                  <th class="num">Rate</th>
-                  <th class="num">Bonus</th>
-                  <th class="num">Total</th>
-                  <th class="actions-col">Actions</th>
-                </tr>
-              </thead>
-              <tbody id="entriesTableBody">
-                <tr>
-                  <td colspan="9" class="empty-cell">Loading entries...</td>
-                </tr>
-              </tbody>
-              <tfoot id="entriesTableFoot"></tfoot>
-            </table>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- TAB 2: PAYOUT SLIP -->
-    <section id="tab-slip" class="tab-panel">
-      <div class="card no-print slip-controls-card">
-        <div class="card-header">
+      <!-- TAB 1: DAILY COLLECTION -->
+      <section id="tab-collection" class="tab-panel active">
+        <header class="page-header">
           <div>
-            <h2>Generate Farmer Payout Slip</h2>
-            <p class="muted">Select a farmer and date range, or click "Slip" on any entry in the daily log</p>
+            <h1>Daily Milk Collection</h1>
+            <p class="page-desc">Record farmer deliveries with automated Fat/SNF rate lookup and volume bonus calculation.</p>
           </div>
-          <button type="button" id="printSlipBtn" class="btn btn-primary" disabled>Print / Save PDF</button>
-        </div>
-
-        <form id="slipFilterForm" class="slip-filter-form">
-          <div class="field">
-            <label for="slipFarmerSelect">Farmer</label>
-            <select id="slipFarmerSelect" required>
-              <option value="">Select a farmer...</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="slipFromDate">From Date</label>
-            <input type="date" id="slipFromDate" />
-          </div>
-          <div class="field">
-            <label for="slipToDate">To Date</label>
-            <input type="date" id="slipToDate" />
-          </div>
-          <div class="field action-align">
-            <button type="submit" class="btn btn-secondary">Generate Slip</button>
-          </div>
-        </form>
-      </div>
-
-      <div id="slipContainer" class="slip-sheet empty-slip">
-        <p class="muted">Select a farmer and click <strong>Generate Slip</strong>, or click <strong>Slip</strong> on any row in the Collection Log.</p>
-      </div>
-    </section>
-
-    <!-- TAB 3: RATE CHART & BONUS EDITOR -->
-    <section id="tab-rates" class="tab-panel">
-      <div class="section-header">
-        <div>
-          <h2>Rate Chart &amp; High-Quantity Bonus Editor</h2>
-          <p class="muted">Edit Fat × SNF rates (₹/L) and configure automatic bonus slabs for high-volume deliveries</p>
-        </div>
-        <div class="btn-group">
-          <button type="button" id="resetRateCardBtn" class="btn btn-outline">Reset Default</button>
-          <button type="button" id="saveRateCardBtn" class="btn btn-primary">Save Changes</button>
-        </div>
-      </div>
-
-      <div class="rates-layout">
-        <!-- Bonus Rules Card -->
-        <div class="card">
-          <div class="card-header">
-            <div>
-              <h3>High-Quantity Bonus Rules</h3>
-              <p class="muted small">Highest qualifying tier is applied automatically</p>
+          <div class="header-actions">
+            <div class="date-chip">
+              <label for="summaryDate">Ledger Date</label>
+              <input type="date" id="summaryDate" />
             </div>
-            <button type="button" id="addBonusRuleBtn" class="btn btn-secondary btn-sm">+ Add Tier</button>
           </div>
+        </header>
 
-          <div id="bonusRulesList" class="bonus-rules-list"></div>
+        <!-- Segmented Metric Strip -->
+        <div class="metrics-strip">
+          <div class="metric-cell">
+            <span class="metric-label">Total Collected</span>
+            <strong class="metric-value mono" id="kpiTotalQty">0.00 L</strong>
+            <span class="metric-sub" id="kpiFarmers">0 farmers · 0 entries</span>
+          </div>
+          <div class="metric-cell">
+            <span class="metric-label">Gross Milk Value</span>
+            <strong class="metric-value mono" id="kpiBaseAmountVal">₹0.00</strong>
+            <span class="metric-sub" id="kpiAvgRate">Avg rate: ₹0.00/L</span>
+          </div>
+          <div class="metric-cell">
+            <span class="metric-label">Volume Bonus Paid</span>
+            <strong class="metric-value mono amber-text" id="kpiTotalBonus">₹0.00</strong>
+            <span class="metric-sub" id="kpiBonusCount">0 qualifying entries</span>
+          </div>
+          <div class="metric-cell metric-accent">
+            <span class="metric-label">Daily Net Payable</span>
+            <strong class="metric-value mono emerald-text" id="kpiTotalPayable">₹0.00</strong>
+            <span class="metric-sub" id="kpiAvgQuality">Weighted Avg: 0.0% Fat · 0.0% SNF</span>
+          </div>
         </div>
 
-        <!-- Rate Matrix Card -->
-        <div class="card">
-          <div class="card-header">
-            <div>
-              <h3>Fat % × SNF % Rate Matrix (₹ / Liter)</h3>
-              <p class="muted small">Click any cell to edit rate. Unlisted decimals match the nearest lower bracket.</p>
+        <div class="split-layout">
+          <!-- Left: Collection Entry Form -->
+          <section class="panel form-panel">
+            <div class="panel-head">
+              <h2>Log Farmer Entry</h2>
+              <span class="tag-neutral" id="rateStatusTag">Auto Rate Card</span>
             </div>
-            <div class="matrix-tools">
-              <div class="inline-add">
-                <input type="number" id="newFatStep" step="0.5" min="0.5" max="20" placeholder="Fat %" />
+
+            <form id="entryForm" class="stack-form">
+              <div class="grid-2">
+                <div class="field">
+                  <label for="entryDate">Date</label>
+                  <input type="date" id="entryDate" required />
+                </div>
+                <div class="field">
+                  <label>Shift</label>
+                  <div class="segmented" role="group" aria-label="Collection Shift">
+                    <button type="button" class="seg-btn active" data-shift="Morning">Morning</button>
+                    <button type="button" class="seg-btn" data-shift="Evening">Evening</button>
+                  </div>
+                  <input type="hidden" id="entryShift" value="Morning" />
+                </div>
+              </div>
+
+              <div class="grid-2">
+                <div class="field">
+                  <label for="farmerId">Farmer Code</label>
+                  <input type="text" id="farmerId" class="mono" list="farmerList" placeholder="F-101" required />
+                  <datalist id="farmerList"></datalist>
+                </div>
+                <div class="field">
+                  <label for="farmerName">Farmer Name</label>
+                  <input type="text" id="farmerName" placeholder="Full name" required />
+                </div>
+              </div>
+
+              <div class="grid-3">
+                <div class="field">
+                  <label for="quantity">Quantity</label>
+                  <div class="input-unit">
+                    <input type="number" id="quantity" class="mono" step="0.1" min="0.1" placeholder="25.0" required />
+                    <span>L</span>
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="fat">Fat</label>
+                  <div class="input-unit">
+                    <input type="number" id="fat" class="mono" step="0.1" min="0" max="20" placeholder="4.5" required />
+                    <span>%</span>
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="snf">SNF</label>
+                  <div class="input-unit">
+                    <input type="number" id="snf" class="mono" step="0.1" min="0" max="20" placeholder="8.5" required />
+                    <span>%</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Receipt-style Live Calculation -->
+              <div class="calc-receipt" id="livePreview">
+                <div class="calc-row muted-row">
+                  <span>Rate Card Match</span>
+                  <span class="mono" id="previewMatchedSlab">—</span>
+                </div>
+                <div class="calc-row">
+                  <span>Unit Rate</span>
+                  <span class="mono" id="previewRate">₹0.00 / L</span>
+                </div>
+                <div class="calc-row">
+                  <span>Base Milk Amount</span>
+                  <span class="mono" id="previewBase">₹0.00</span>
+                </div>
+                <div class="calc-row">
+                  <span>High-Quantity Bonus</span>
+                  <span class="mono amber-text" id="previewBonus">₹0.00</span>
+                </div>
+                <div class="calc-divider"></div>
+                <div class="calc-row calc-total">
+                  <span>Net Payable</span>
+                  <strong class="mono emerald-text" id="previewTotal">₹0.00</strong>
+                </div>
+                <p class="calc-footnote" id="previewBonusNote">Enter quantity, fat, and SNF to preview pricing.</p>
+              </div>
+
+              <button type="submit" class="btn btn-primary btn-full">Save Collection Entry</button>
+            </form>
+          </section>
+
+          <!-- Right: Daily Register -->
+          <section class="panel table-panel">
+            <div class="panel-head register-head">
+              <div>
+                <h2>Collection Register</h2>
+                <p class="panel-sub" id="registerSubtitle">Showing entries for today</p>
+              </div>
+
+              <div class="table-controls">
+                <div class="segmented segmented-sm" role="group" aria-label="Shift Filter">
+                  <button type="button" class="shift-filter-btn active" data-filter-shift="ALL">All</button>
+                  <button type="button" class="shift-filter-btn" data-filter-shift="Morning">Morning</button>
+                  <button type="button" class="shift-filter-btn" data-filter-shift="Evening">Evening</button>
+                </div>
+                <div class="search-box">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
+                  <input type="search" id="farmerSearch" placeholder="Search farmer..." />
+                </div>
+              </div>
+            </div>
+
+            <div class="table-scroll">
+              <table class="ledger-table">
+                <thead>
+                  <tr>
+                    <th>Farmer</th>
+                    <th>Shift</th>
+                    <th class="num">Qty (L)</th>
+                    <th class="num">Fat</th>
+                    <th class="num">SNF</th>
+                    <th class="num">Rate/L</th>
+                    <th class="num">Bonus</th>
+                    <th class="num">Payable</th>
+                    <th class="actions-col"></th>
+                  </tr>
+                </thead>
+                <tbody id="entriesTableBody">
+                  <tr>
+                    <td colspan="9" class="empty-state">Loading collection entries...</td>
+                  </tr>
+                </tbody>
+                <tfoot id="entriesTableFoot"></tfoot>
+              </table>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- TAB 2: PAYOUT SLIPS -->
+      <section id="tab-slip" class="tab-panel">
+        <header class="page-header no-print">
+          <div>
+            <h1>Farmer Payout Slips</h1>
+            <p class="page-desc">Generate itemized settlement statements for single deliveries or multi-day collection periods.</p>
+          </div>
+          <button type="button" id="printSlipBtn" class="btn btn-primary" disabled>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 6 2 18 2 18 9" />
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+              <rect x="6" y="14" width="12" height="8" />
+            </svg>
+            <span>Print / Save PDF</span>
+          </button>
+        </header>
+
+        <section class="panel slip-toolbar no-print">
+          <form id="slipFilterForm" class="slip-form-grid">
+            <div class="field">
+              <label for="slipFarmerSelect">Farmer</label>
+              <select id="slipFarmerSelect" required>
+                <option value="">Select farmer...</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="slipFromDate">From Date</label>
+              <input type="date" id="slipFromDate" />
+            </div>
+            <div class="field">
+              <label for="slipToDate">To Date</label>
+              <input type="date" id="slipToDate" />
+            </div>
+            <div class="field btn-end">
+              <button type="submit" class="btn btn-secondary">Generate Statement</button>
+            </div>
+          </form>
+        </section>
+
+        <div id="slipContainer" class="statement-paper statement-empty">
+          <p>Select a farmer and date range above, or click <strong>Slip</strong> on any row in the Collection Register.</p>
+        </div>
+      </section>
+
+      <!-- TAB 3: RATE CHART & BONUS -->
+      <section id="tab-rates" class="tab-panel">
+        <header class="page-header">
+          <div>
+            <h1>Rate Chart &amp; Bonus Configuration</h1>
+            <p class="page-desc">Manage the Fat × SNF pricing grid and automatic high-quantity incentive slabs.</p>
+          </div>
+          <div class="btn-row">
+            <button type="button" id="resetRateCardBtn" class="btn btn-outline">Reset Defaults</button>
+            <button type="button" id="saveRateCardBtn" class="btn btn-primary">Save Rate Card</button>
+          </div>
+        </header>
+
+        <!-- Bonus Slabs Panel -->
+        <section class="panel section-gap">
+          <div class="panel-head">
+            <div>
+              <h2>High-Quantity Bonus Slabs</h2>
+              <p class="panel-sub">Highest matching volume threshold is added automatically per liter.</p>
+            </div>
+            <button type="button" id="addBonusRuleBtn" class="btn btn-outline btn-sm">+ Add Bonus Tier</button>
+          </div>
+          <div id="bonusRulesList" class="bonus-grid"></div>
+        </section>
+
+        <!-- Rate Matrix Panel -->
+        <section class="panel">
+          <div class="panel-head matrix-head">
+            <div>
+              <h2>Fat % × SNF % Rate Matrix (₹ / Liter)</h2>
+              <p class="panel-sub">Edit cells inline. Readings between steps automatically match the nearest lower slab.</p>
+            </div>
+            <div class="matrix-toolbar">
+              <div class="compact-group">
+                <input type="number" id="newFatStep" class="mono" step="0.5" min="0.5" max="20" placeholder="Fat %" />
                 <button type="button" id="addFatBtn" class="btn btn-outline btn-sm">+ Fat Row</button>
               </div>
-              <div class="inline-add">
-                <input type="number" id="newSnfStep" step="0.5" min="0.5" max="20" placeholder="SNF %" />
+              <div class="compact-group">
+                <input type="number" id="newSnfStep" class="mono" step="0.5" min="0.5" max="20" placeholder="SNF %" />
                 <button type="button" id="addSnfBtn" class="btn btn-outline btn-sm">+ SNF Col</button>
               </div>
-              <div class="inline-add">
-                <input type="number" id="bulkDelta" step="0.5" placeholder="± ₹/L" />
+              <div class="compact-group">
+                <input type="number" id="bulkDelta" class="mono" step="0.5" placeholder="± ₹/L" />
                 <button type="button" id="applyBulkDeltaBtn" class="btn btn-outline btn-sm">Adjust All</button>
               </div>
             </div>
           </div>
 
-          <div class="table-wrap">
-            <table class="rate-matrix" id="rateMatrixTable"></table>
+          <div class="table-scroll">
+            <table class="matrix-table" id="rateMatrixTable"></table>
           </div>
-        </div>
-      </div>
-    </section>
-  </main>
+        </section>
+      </section>
+    </div>
+  </div>
 
   <script src="/app.js"></script>
 </body>
