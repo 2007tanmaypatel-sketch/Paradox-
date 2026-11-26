@@ -6,7 +6,14 @@
     entries: [],
     farmers: [],
     shiftFilter: 'ALL',
-    activeSlip: null
+    activeSlip: null,
+    lastAddedId: null,
+    kpiValues: {
+      qty: 0,
+      base: 0,
+      bonus: 0,
+      payable: 0
+    }
   };
 
   const $ = (id) => document.getElementById(id);
@@ -27,6 +34,29 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  // Smooth number counter animation for KPI cards
+  function animateValue(el, from, to, formatter, duration = 420) {
+    const start = performance.now();
+    const diff = to - from;
+    if (Math.abs(diff) < 0.01) {
+      el.textContent = formatter(to);
+      return;
+    }
+
+    function tick(now) {
+      const elapsed = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - elapsed, 3);
+      el.textContent = formatter(from + diff * eased);
+      if (elapsed < 1) {
+        requestAnimationFrame(tick);
+      } else {
+        el.textContent = formatter(to);
+      }
+    }
+
+    requestAnimationFrame(tick);
   }
 
   let toastTimer;
@@ -52,13 +82,14 @@
     return data;
   }
 
-  // Sidebar Navigation
+  // Sidebar Navigation with re-triggered panel reveal
   function switchTab(tabName) {
     document.querySelectorAll('.nav-item').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.tab === tabName);
     });
     document.querySelectorAll('.tab-panel').forEach((panel) => {
-      panel.classList.toggle('active', panel.id === `tab-${tabName}`);
+      const active = panel.id === `tab-${tabName}`;
+      panel.classList.toggle('active', active);
     });
   }
 
@@ -66,7 +97,7 @@
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
   });
 
-  // Shift Segmented Toggle in Entry Form
+  // Shift Segmented Toggle
   document.querySelectorAll('.seg-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.seg-btn').forEach((b) => b.classList.remove('active'));
@@ -131,13 +162,21 @@
   }
 
   function renderKpis(summary) {
-    $('kpiTotalQty').textContent = `${formatNum(summary.totalQuantity)} L`;
+    animateValue($('kpiTotalQty'), state.kpiValues.qty, summary.totalQuantity, (v) => `${formatNum(v)} L`);
+    animateValue($('kpiBaseAmountVal'), state.kpiValues.base, summary.totalBaseAmount, formatINR);
+    animateValue($('kpiTotalBonus'), state.kpiValues.bonus, summary.totalBonusAmount, formatINR);
+    animateValue($('kpiTotalPayable'), state.kpiValues.payable, summary.totalPayable, formatINR);
+
+    state.kpiValues = {
+      qty: summary.totalQuantity,
+      base: summary.totalBaseAmount,
+      bonus: summary.totalBonusAmount,
+      payable: summary.totalPayable
+    };
+
     $('kpiFarmers').textContent = `${summary.farmerCount} farmer${summary.farmerCount === 1 ? '' : 's'} · ${summary.entryCount} entr${summary.entryCount === 1 ? 'y' : 'ies'}`;
-    $('kpiBaseAmountVal').textContent = formatINR(summary.totalBaseAmount);
     $('kpiAvgRate').textContent = `Avg rate: ${formatINR(summary.avgRate)}/L`;
-    $('kpiTotalBonus').textContent = formatINR(summary.totalBonusAmount);
     $('kpiBonusCount').textContent = `${summary.bonusEntriesCount} qualifying entr${summary.bonusEntriesCount === 1 ? 'y' : 'ies'}`;
-    $('kpiTotalPayable').textContent = formatINR(summary.totalPayable);
     $('kpiAvgQuality').textContent = `Weighted Avg: ${formatNum(summary.avgFat, 1)}% Fat · ${formatNum(summary.avgSnf, 1)}% SNF`;
   }
 
@@ -167,12 +206,13 @@
     }
 
     tbody.innerHTML = filtered
-      .map((e) => {
+      .map((e, idx) => {
         const bonusCell = e.bonusApplied
           ? `<span class="bonus-pill" title="${escapeHtml(e.bonusLabel || '')}">+${formatINR(e.bonusAmount)}</span>`
           : `<span style="color:var(--ink-muted)">—</span>`;
+        const rowClass = e.id === state.lastAddedId ? 'row-flash' : 'row-enter';
         return `
-          <tr>
+          <tr class="${rowClass}" style="--row-delay: ${Math.min(idx * 35, 280)}ms">
             <td>
               <div class="farmer-cell">
                 <span class="farmer-code-pill">${escapeHtml(e.farmerId)}</span>
@@ -203,6 +243,8 @@
         `;
       })
       .join('');
+
+    state.lastAddedId = null;
 
     const totalQty = filtered.reduce((acc, e) => acc + e.quantity, 0);
     const totalBonus = filtered.reduce((acc, e) => acc + e.bonusAmount, 0);
@@ -251,11 +293,42 @@
     }
   });
 
+  function updateBonusMeter(qty) {
+    const rules = [...(state.rateCard?.bonusRules || [])].sort((a, b) => a.minQuantity - b.minQuantity);
+    const fill = $('meterFill');
+    const label = $('meterLabel');
+
+    if (rules.length === 0) {
+      fill.style.width = '0%';
+      fill.classList.remove('qualified');
+      label.textContent = 'No bonus tiers';
+      return;
+    }
+
+    const numericQty = Number.isFinite(qty) && qty > 0 ? qty : 0;
+    const nextTier = rules.find((r) => numericQty < r.minQuantity) || rules[rules.length - 1];
+    const pct = Math.min(100, Math.round((numericQty / nextTier.minQuantity) * 100));
+    const qualified = numericQty >= rules[0].minQuantity;
+
+    fill.style.width = `${pct}%`;
+    fill.classList.toggle('qualified', qualified);
+
+    if (numericQty >= rules[rules.length - 1].minQuantity) {
+      label.textContent = `${formatNum(numericQty, 1)} L · Max tier unlocked`;
+    } else if (qualified) {
+      label.textContent = `${formatNum(numericQty, 1)} / ${nextTier.minQuantity} L (Bonus active)`;
+    } else {
+      label.textContent = `${formatNum(numericQty, 1)} / ${nextTier.minQuantity} L`;
+    }
+  }
+
   let previewSeq = 0;
   async function updateLivePreview() {
     const qty = Number($('quantity').value);
     const fat = Number($('fat').value);
     const snf = Number($('snf').value);
+
+    updateBonusMeter(qty);
 
     if (!Number.isFinite(qty) || qty <= 0 || $('fat').value === '' || $('snf').value === '' || !Number.isFinite(fat) || !Number.isFinite(snf)) {
       $('previewMatchedSlab').textContent = '—';
@@ -322,6 +395,7 @@
         method: 'POST',
         body: JSON.stringify(payload)
       });
+      state.lastAddedId = res.entry.id;
       showToast(`Saved ${formatNum(res.entry.quantity)} L for ${res.entry.farmerName} (${formatINR(res.entry.totalAmount)})`);
       $('summaryDate').value = res.entry.date;
       $('quantity').value = '';
@@ -397,7 +471,7 @@
       <div class="statement-header">
         <div>
           <h2>PARADOX DAIRY — PAYOUT STATEMENT</h2>
-          <p>Collection Center #01 · Farmer Milk Settlement</p>
+          <p>Collection Center #01 · Milk Atelier Settlement</p>
         </div>
         <div style="text-align:right">
           <strong class="mono">${escapeHtml(slip.slipNumber)}</strong>
@@ -443,26 +517,35 @@
         </table>
       </div>
 
-      <div class="statement-totals">
-        <div class="statement-total-row">
-          <span>Deliveries</span>
-          <span class="mono">${slip.summary.entryCount}</span>
-        </div>
-        <div class="statement-total-row">
-          <span>Total Volume</span>
-          <span class="mono">${formatNum(slip.summary.totalQuantity)} L</span>
-        </div>
-        <div class="statement-total-row">
-          <span>Gross Base Amount</span>
-          <span class="mono">${formatINR(slip.summary.totalBaseAmount)}</span>
-        </div>
-        <div class="statement-total-row">
-          <span>High-Quantity Bonus</span>
-          <span class="mono amber-text">+ ${formatINR(slip.summary.totalBonusAmount)}</span>
-        </div>
-        <div class="statement-total-row net">
-          <span>Net Payable</span>
-          <span class="mono emerald-text">${formatINR(slip.summary.totalPayable)}</span>
+      <div class="statement-bottom">
+        <svg class="verified-stamp" viewBox="0 0 120 120" aria-label="Verified Settlement Seal">
+          <circle cx="60" cy="60" r="52" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="4 3" />
+          <circle cx="60" cy="60" r="42" fill="none" stroke="currentColor" stroke-width="1.2" />
+          <text x="60" y="54" text-anchor="middle" font-family="Fraunces, serif" font-size="11" font-weight="700" fill="currentColor">VERIFIED</text>
+          <text x="60" y="69" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" font-weight="600" fill="currentColor">PARADOX DAIRY</text>
+        </svg>
+
+        <div class="statement-totals">
+          <div class="statement-total-row">
+            <span>Deliveries</span>
+            <span class="mono">${slip.summary.entryCount}</span>
+          </div>
+          <div class="statement-total-row">
+            <span>Total Volume</span>
+            <span class="mono">${formatNum(slip.summary.totalQuantity)} L</span>
+          </div>
+          <div class="statement-total-row">
+            <span>Gross Base Amount</span>
+            <span class="mono">${formatINR(slip.summary.totalBaseAmount)}</span>
+          </div>
+          <div class="statement-total-row">
+            <span>High-Quantity Bonus</span>
+            <span class="mono amber-text">+ ${formatINR(slip.summary.totalBonusAmount)}</span>
+          </div>
+          <div class="statement-total-row net">
+            <span>Net Payable</span>
+            <span class="mono emerald-text">${formatINR(slip.summary.totalPayable)}</span>
+          </div>
         </div>
       </div>
 
@@ -572,9 +655,27 @@
     renderBonusRules();
   });
 
+  function computeHeatmapRange(fatSteps, snfSteps, rates) {
+    let min = Infinity;
+    let max = -Infinity;
+    for (const fat of fatSteps) {
+      const fKey = fat.toFixed(1);
+      for (const snf of snfSteps) {
+        const sKey = snf.toFixed(1);
+        const val = Number(rates[fKey]?.[sKey]);
+        if (Number.isFinite(val)) {
+          if (val < min) min = val;
+          if (val > max) max = val;
+        }
+      }
+    }
+    return { min, max: max > min ? max : min + 1 };
+  }
+
   function renderRateMatrix() {
     const table = $('rateMatrixTable');
     const { fatSteps, snfSteps, rates } = state.rateCard;
+    const { min, max } = computeHeatmapRange(fatSteps, snfSteps, rates);
 
     const headerCols = snfSteps
       .map((snf) => {
@@ -597,10 +698,12 @@
           .map((snf) => {
             const sKey = snf.toFixed(1);
             const cellKey = `${fKey}|${sKey}`;
-            const val = rates[fKey]?.[sKey] ?? 0;
+            const val = Number(rates[fKey]?.[sKey] ?? 0);
+            const ratio = Math.max(0, Math.min(1, (val - min) / (max - min)));
+            const tintAlpha = (0.04 + ratio * 0.22).toFixed(3);
             const dirtyClass = state.dirtyCells.has(cellKey) ? ' dirty' : '';
             return `
-              <td>
+              <td style="background: rgba(20, 83, 56, ${tintAlpha})">
                 <input
                   type="number"
                   step="0.05"
@@ -608,7 +711,7 @@
                   class="rate-cell-input${dirtyClass}"
                   data-fat="${fKey}"
                   data-snf="${sKey}"
-                  value="${Number(val).toFixed(2)}"
+                  value="${val.toFixed(2)}"
                 />
               </td>
             `;
