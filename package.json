@@ -1,0 +1,21 @@
+{
+  "name": "paradox-dairy-collection",
+  "version": "1.0.0",
+  "description": "Dairy milk collection, rate card lookup, high-quantity bonus, daily totals, and payout slip web app.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test tests/pricing.test.js"
+  },
+  "keywords": [
+    "dairy",
+    "milk-collection",
+    "rate-card",
+    "payout-slip",
+    "nodejs"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
