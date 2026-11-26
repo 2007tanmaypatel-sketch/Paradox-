@@ -1,4 +1,4 @@
-# Paradox Dairy — Milk Collection & Payout Web App
+# Paradox Dairy — Milk Collection & Payout Web Application
 
 A full-stack dairy milk collection management web application built with **HTML**, **CSS**, **JavaScript**, and **Node.js** (zero external runtime dependencies).
 
